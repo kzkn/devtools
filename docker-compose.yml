@@ -1,0 +1,20 @@
+---
+services:
+  pg14:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "54314:5432"
+    container_name: pg14
+    volumes:
+      - ./volumes/pg14/data:/var/lib/postgresql/data
+  redis6:
+    image: redis:6
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "6379:6379"
+    container_name: redis6
