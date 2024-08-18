@@ -33,3 +33,13 @@ services:
       - --max-allowed-packet=128M
     volumes:
       - ./volumes/mysql57/data:/var/lib/mysql
+  es8:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    ports:
+      - 9208:9200
+    container_name: es8
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    command: ["bash", "-c", "bin/elasticsearch-plugin install analysis-kuromoji analysis-icu; docker-entrypoint.sh"]
