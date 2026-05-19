@@ -75,9 +75,12 @@ else
 
     case rec["type"]
     when "user"
+      next if rec["isMeta"] || rec["isSidechain"]
       text = user_prompt_text(rec)
       if text.empty?
         last_meaningful = :user_tool_result
+      elsif text.start_with?("<local-command-", "<command-name>")
+        next
       else
         latest_prompt = text
         last_meaningful = :user_prompt
@@ -109,21 +112,29 @@ else
   }
 end
 
+def session_info_for_pid(pid)
+  path = File.join(Dir.home, ".claude", "sessions", "#{pid}.json")
+  return nil unless File.exist?(path)
+  JSON.parse(File.read(path))
+rescue
+  nil
+end
+
 def running_claude_processes
   out = `ps -eo pid,comm,args 2>/dev/null`
   out.lines.filter_map do |line|
     parts = line.strip.split(/\s+/, 3)
     next unless parts.size == 3
-    pid, comm, args = parts
+    pid_str, comm, args = parts
     next unless comm == "claude"
-    cwd = begin
-      File.readlink("/proc/#{pid}/cwd")
-    rescue
-      nil
-    end
+    pid = pid_str.to_i
+
+    info = session_info_for_pid(pid)
+    cwd = info&.dig("cwd") || (File.readlink("/proc/#{pid}/cwd") rescue nil)
     next unless cwd
-    session_id = args[/-r\s+(\S+)/, 1]
-    { pid: pid.to_i, cwd: cwd, session_id: session_id }
+
+    session_id = info&.dig("sessionId") || args[/-r\s+(\S+)/, 1]
+    { pid: pid, cwd: cwd, session_id: session_id }
   end
 rescue
   []
