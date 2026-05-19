@@ -130,7 +130,7 @@ rescue
 end
 
 def find_session_jsonl(claude_dir, cwd, session_id)
-  project_dir = File.join(claude_dir, cwd.gsub(%r{[/.]}, "-"))
+  project_dir = File.join(claude_dir, cwd.gsub(%r{[/._]}, "-"))
   return nil unless Dir.exist?(project_dir)
 
   if session_id
