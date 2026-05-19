@@ -186,15 +186,14 @@ end
 
 rows.sort_by! { |r| -r[:last_ts].to_i }
 
-puts format("%-7s %-35s %-8s %-12s %9s  %s",
+puts format("%-7s %-26s %-8s %-12s %9s  %s",
             "PID", "CWD", "STATUS", "LAST ACTIVE", "TOKENS", "LATEST PROMPT")
 puts "─" * 110
 
 rows.each do |r|
-  cwd_short = r[:cwd].sub(Dir.home, "~")
-  cwd_short = "…" + cwd_short[-32..] if cwd_short.length > 33
+  cwd_short = File.basename(r[:cwd])
   prompt = (r[:latest_prompt].empty? ? "(no prompt yet)" : r[:latest_prompt]).gsub("\n", " ")[0, 55]
-  puts format("%-7d %-35s %-8s %-12s %9s  %s",
+  puts format("%-7d %-26s %-8s %-12s %9s  %s",
               r[:pid], cwd_short, r[:status], relative_time(r[:last_ts]),
               fmt_tokens(r[:tokens]), prompt)
 end
