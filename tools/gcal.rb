@@ -18,11 +18,11 @@ require "socket"
 require "time"
 require "uri"
 
-CONFIG_DIR   = File.join(Dir.home, ".config", "gcal")
-CRED_PATH    = File.join(CONFIG_DIR, "credentials.json")
-TOKEN_PATH   = File.join(CONFIG_DIR, "token.json")
+CONFIG_DIR = File.join(Dir.home, ".config", "gcal")
+CRED_PATH = File.join(CONFIG_DIR, "credentials.json")
+TOKEN_PATH = File.join(CONFIG_DIR, "token.json")
 REDIRECT_URI = "http://127.0.0.1:9876"
-SCOPE        = "https://www.googleapis.com/auth/calendar.readonly"
+SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 
 def client_config
   JSON.parse(File.read(CRED_PATH)).values.first
@@ -37,32 +37,31 @@ def authenticate!
   cfg = client_config
   auth_url = URI(cfg["auth_uri"])
   auth_url.query = URI.encode_www_form(
-    client_id:     cfg["client_id"],
-    redirect_uri:  REDIRECT_URI,
+    client_id: cfg["client_id"],
+    redirect_uri: REDIRECT_URI,
     response_type: "code",
-    scope:         SCOPE,
-    access_type:   "offline",
-    prompt:        "consent",
+    scope: SCOPE,
+    access_type: "offline",
+    prompt: "consent",
   )
   warn "ブラウザで開いて認証してください: #{auth_url}"
   system("xdg-open", auth_url.to_s, out: File::NULL, err: File::NULL)
 
-  uri     = URI(REDIRECT_URI)
-  server  = TCPServer.new(uri.host, uri.port)
+  uri = URI(REDIRECT_URI)
+  server = TCPServer.new(uri.host, uri.port)
   session = server.accept
-  path    = session.gets.split(" ")[1]
-  code    = URI.decode_www_form(URI(path).query).to_h.fetch("code")
+  path = session.gets.split(" ")[1]
+  code = URI.decode_www_form(URI(path).query).to_h.fetch("code")
   session.write "HTTP/1.1 200 OK\r\n\r\n認証完了\n"
   session.close
   server.close
 
   tok = post_form(cfg["token_uri"],
-    code:          code,
-    client_id:     cfg["client_id"],
-    client_secret: cfg["client_secret"],
-    redirect_uri:  REDIRECT_URI,
-    grant_type:    "authorization_code",
-  )
+                  code: code,
+                  client_id: cfg["client_id"],
+                  client_secret: cfg["client_secret"],
+                  redirect_uri: REDIRECT_URI,
+                  grant_type: "authorization_code")
   tok["expires_at"] = Time.now.to_i + tok["expires_in"].to_i
   FileUtils.mkdir_p(CONFIG_DIR)
   File.write(TOKEN_PATH, JSON.pretty_generate(tok))
@@ -74,11 +73,10 @@ def access_token
   if Time.now.to_i >= tok["expires_at"].to_i - 60
     cfg = client_config
     refreshed = post_form(cfg["token_uri"],
-      client_id:     cfg["client_id"],
-      client_secret: cfg["client_secret"],
-      refresh_token: tok["refresh_token"],
-      grant_type:    "refresh_token",
-    )
+                          client_id: cfg["client_id"],
+                          client_secret: cfg["client_secret"],
+                          refresh_token: tok["refresh_token"],
+                          grant_type: "refresh_token")
     tok.merge!(refreshed)
     tok["expires_at"] = Time.now.to_i + refreshed["expires_in"].to_i
     File.write(TOKEN_PATH, JSON.pretty_generate(tok))
@@ -89,36 +87,36 @@ end
 def parse_date(arg)
   case arg
   when nil, "today" then Date.today
-  when "tomorrow"   then Date.today + 1
-  when "yesterday"  then Date.today - 1
-  else                   Date.parse(arg)
+  when "tomorrow" then Date.today + 1
+  when "yesterday" then Date.today - 1
+  else Date.parse(arg)
   end
 end
 
 def fetch_events(date)
   day_start = Time.new(date.year, date.month, date.day)
-  day_end   = day_start + 24 * 60 * 60
+  day_end = day_start + 24 * 60 * 60
   uri = URI("https://www.googleapis.com/calendar/v3/calendars/primary/events")
   uri.query = URI.encode_www_form(
     singleEvents: true,
-    orderBy:      "startTime",
-    timeMin:      day_start.iso8601,
-    timeMax:      day_end.iso8601,
-    maxResults:   250,
+    orderBy: "startTime",
+    timeMin: day_start.iso8601,
+    timeMax: day_end.iso8601,
+    maxResults: 250,
   )
   req = Net::HTTP::Get.new(uri)
   req["Authorization"] = "Bearer #{access_token}"
   res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |h| h.request(req) }
   JSON.parse(res.body).fetch("items", []).map do |e|
     start_h = e["start"] || {}
-    end_h   = e["end"]   || {}
+    end_h = e["end"] || {}
     {
-      id:        e["id"],
-      summary:   e["summary"],
-      start:     start_h["dateTime"] || start_h["date"],
-      end:       end_h["dateTime"]   || end_h["date"],
-      all_day:   !start_h["date"].nil?,
-      location:  e["location"],
+      id: e["id"],
+      summary: e["summary"],
+      start: start_h["dateTime"] || start_h["date"],
+      end: end_h["dateTime"] || end_h["date"],
+      all_day: !start_h["date"].nil?,
+      location: e["location"],
       attendees: (e["attendees"] || []).map { |a| { email: a["email"], response: a["responseStatus"] } },
       html_link: e["htmlLink"],
     }
