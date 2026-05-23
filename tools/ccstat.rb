@@ -9,10 +9,10 @@ require "time"
 def relative_time(t)
   diff = Time.now.utc - t.utc
   case diff
-  when 0...60        then "#{diff.to_i}s ago"
-  when 60...3_600    then "#{(diff / 60).to_i}m ago"
+  when 0...60 then "#{diff.to_i}s ago"
+  when 60...3_600 then "#{(diff / 60).to_i}m ago"
   when 3_600...86_400 then "#{(diff / 3_600).to_i}h ago"
-  else                    "#{(diff / 86_400).to_i}d ago"
+  else "#{(diff / 86_400).to_i}d ago"
   end
 end
 
@@ -49,11 +49,11 @@ def parse_session(jsonl_path)
 rescue
   return nil
 else
-  last_ts          = nil
-  total_input      = 0
-  total_output     = 0
-  latest_prompt    = nil
-  last_meaningful  = nil
+  last_ts = nil
+  total_input = 0
+  total_output = 0
+  latest_prompt = nil
+  last_meaningful = nil
 
   lines.each do |raw|
     raw = raw.strip
@@ -88,15 +88,14 @@ else
     when "assistant"
       msg = rec["message"] || {}
       usage = msg["usage"] || {}
-      total_input  += (usage["input_tokens"]  || 0).to_i
+      total_input += (usage["input_tokens"] || 0).to_i
       total_output += (usage["output_tokens"] || 0).to_i
 
       stop = msg["stop_reason"]
-      last_meaningful =
-        case stop
+      last_meaningful = case stop
         when "end_turn", "stop_sequence" then :assistant_done
-        when "tool_use"                   then :assistant_tool_use
-        else                                    :assistant_other
+        when "tool_use" then :assistant_tool_use
+        else :assistant_other
         end
     end
   end
@@ -104,10 +103,10 @@ else
   return nil if last_ts.nil?
 
   {
-    last_ts:         last_ts,
-    input_tokens:    total_input,
-    output_tokens:   total_output,
-    latest_prompt:   latest_prompt || "",
+    last_ts: last_ts,
+    input_tokens: total_input,
+    output_tokens: total_output,
+    latest_prompt: latest_prompt || "",
     last_meaningful: last_meaningful,
   }
 end
@@ -158,7 +157,7 @@ def session_status(session, jsonl_path)
 
   case session[:last_meaningful]
   when :assistant_done then "waiting"
-  else                      "running"
+  else "running"
   end
 end
 
@@ -181,11 +180,11 @@ rows = procs.filter_map do |p|
   next nil unless s
 
   {
-    pid:           p[:pid],
-    cwd:           p[:cwd],
-    status:        session_status(s, jsonl),
-    last_ts:       s[:last_ts],
-    tokens:        s[:input_tokens] + s[:output_tokens],
+    pid: p[:pid],
+    cwd: p[:cwd],
+    status: session_status(s, jsonl),
+    last_ts: s[:last_ts],
+    tokens: s[:input_tokens] + s[:output_tokens],
     latest_prompt: s[:latest_prompt],
   }
 end
