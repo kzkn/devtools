@@ -3,8 +3,8 @@
 
 # gcal - 指定された日付の Google カレンダー予定を JSON で出力
 #
-# 必要な gem: google-apis-calendar_v3, googleauth
-# 認証情報: ~/.config/gcal/credentials.json に OAuth クライアント JSON を置く
+# 認証情報: ~/.config/gcal/credentials.json に OAuth クライアント JSON
+# (Google Cloud Console のデスクトップアプリ) を置く
 # 使い方:
 #   gcal.rb auth          # 初回認証
 #   gcal.rb               # 今日
@@ -13,35 +13,41 @@
 require "date"
 require "fileutils"
 require "json"
+require "net/http"
 require "socket"
 require "time"
 require "uri"
 
-require "google/apis/calendar_v3"
-require "googleauth"
-require "googleauth/stores/file_token_store"
+CONFIG_DIR   = File.join(Dir.home, ".config", "gcal")
+CRED_PATH    = File.join(CONFIG_DIR, "credentials.json")
+TOKEN_PATH   = File.join(CONFIG_DIR, "token.json")
+REDIRECT_URI = "http://127.0.0.1:9876"
+SCOPE        = "https://www.googleapis.com/auth/calendar.readonly"
 
-CONFIG_DIR    = File.join(Dir.home, ".config", "gcal")
-CRED_PATH     = File.join(CONFIG_DIR, "credentials.json")
-TOKEN_PATH    = File.join(CONFIG_DIR, "token.yaml")
-SCOPE         = Google::Apis::CalendarV3::AUTH_CALENDAR_READONLY
-CALLBACK_URI  = "http://127.0.0.1:9876"
-USER_ID       = "default"
+def client_config
+  JSON.parse(File.read(CRED_PATH)).values.first
+end
 
-def authorizer
-  FileUtils.mkdir_p(CONFIG_DIR)
-  client_id   = Google::Auth::ClientId.from_file(CRED_PATH)
-  token_store = Google::Auth::Stores::FileTokenStore.new(file: TOKEN_PATH)
-  Google::Auth::UserAuthorizer.new(client_id, SCOPE, token_store, CALLBACK_URI)
+def post_form(url, params)
+  res = Net::HTTP.post_form(URI(url), params)
+  JSON.parse(res.body)
 end
 
 def authenticate!
-  auth = authorizer
-  url  = auth.get_authorization_url
-  warn "ブラウザで開いて認証してください: #{url}"
-  system("xdg-open", url, out: File::NULL, err: File::NULL)
+  cfg = client_config
+  auth_url = URI(cfg["auth_uri"])
+  auth_url.query = URI.encode_www_form(
+    client_id:     cfg["client_id"],
+    redirect_uri:  REDIRECT_URI,
+    response_type: "code",
+    scope:         SCOPE,
+    access_type:   "offline",
+    prompt:        "consent",
+  )
+  warn "ブラウザで開いて認証してください: #{auth_url}"
+  system("xdg-open", auth_url.to_s, out: File::NULL, err: File::NULL)
 
-  uri     = URI(CALLBACK_URI)
+  uri     = URI(REDIRECT_URI)
   server  = TCPServer.new(uri.host, uri.port)
   session = server.accept
   path    = session.gets.split(" ")[1]
@@ -50,8 +56,34 @@ def authenticate!
   session.close
   server.close
 
-  auth.get_and_store_credentials_from_code(user_id: USER_ID, code: code)
+  tok = post_form(cfg["token_uri"],
+    code:          code,
+    client_id:     cfg["client_id"],
+    client_secret: cfg["client_secret"],
+    redirect_uri:  REDIRECT_URI,
+    grant_type:    "authorization_code",
+  )
+  tok["expires_at"] = Time.now.to_i + tok["expires_in"].to_i
+  FileUtils.mkdir_p(CONFIG_DIR)
+  File.write(TOKEN_PATH, JSON.pretty_generate(tok))
   warn "保存: #{TOKEN_PATH}"
+end
+
+def access_token
+  tok = JSON.parse(File.read(TOKEN_PATH))
+  if Time.now.to_i >= tok["expires_at"].to_i - 60
+    cfg = client_config
+    refreshed = post_form(cfg["token_uri"],
+      client_id:     cfg["client_id"],
+      client_secret: cfg["client_secret"],
+      refresh_token: tok["refresh_token"],
+      grant_type:    "refresh_token",
+    )
+    tok.merge!(refreshed)
+    tok["expires_at"] = Time.now.to_i + refreshed["expires_in"].to_i
+    File.write(TOKEN_PATH, JSON.pretty_generate(tok))
+  end
+  tok["access_token"]
 end
 
 def parse_date(arg)
@@ -64,31 +96,31 @@ def parse_date(arg)
 end
 
 def fetch_events(date)
-  service = Google::Apis::CalendarV3::CalendarService.new
-  service.authorization = authorizer.get_credentials(USER_ID)
-
   day_start = Time.new(date.year, date.month, date.day)
   day_end   = day_start + 24 * 60 * 60
-
-  result = service.list_events(
-    "primary",
-    single_events: true,
-    order_by:      "startTime",
-    time_min:      day_start.iso8601,
-    time_max:      day_end.iso8601,
-    max_results:   250,
+  uri = URI("https://www.googleapis.com/calendar/v3/calendars/primary/events")
+  uri.query = URI.encode_www_form(
+    singleEvents: true,
+    orderBy:      "startTime",
+    timeMin:      day_start.iso8601,
+    timeMax:      day_end.iso8601,
+    maxResults:   250,
   )
-
-  result.items.map do |e|
+  req = Net::HTTP::Get.new(uri)
+  req["Authorization"] = "Bearer #{access_token}"
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |h| h.request(req) }
+  JSON.parse(res.body).fetch("items", []).map do |e|
+    start_h = e["start"] || {}
+    end_h   = e["end"]   || {}
     {
-      id:        e.id,
-      summary:   e.summary,
-      start:     e.start.date_time&.iso8601 || e.start.date,
-      end:       e.end.date_time&.iso8601   || e.end.date,
-      all_day:   !e.start.date.nil?,
-      location:  e.location,
-      attendees: (e.attendees || []).map { |a| { email: a.email, response: a.response_status } },
-      html_link: e.html_link,
+      id:        e["id"],
+      summary:   e["summary"],
+      start:     start_h["dateTime"] || start_h["date"],
+      end:       end_h["dateTime"]   || end_h["date"],
+      all_day:   !start_h["date"].nil?,
+      location:  e["location"],
+      attendees: (e["attendees"] || []).map { |a| { email: a["email"], response: a["responseStatus"] } },
+      html_link: e["htmlLink"],
     }
   end
 end
