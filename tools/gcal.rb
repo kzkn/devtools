@@ -25,6 +25,20 @@ REDIRECT_URI = "http://127.0.0.1:9876"
 SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 
 def client_config
+  unless File.exist?(CRED_PATH)
+    warn <<~MSG
+           OAuth クライアント JSON が見つかりません: #{CRED_PATH}
+
+           セットアップ手順:
+             1. Google Cloud Console (https://console.cloud.google.com/) でプロジェクトを作成
+             2. 「APIとサービス」→「ライブラリ」で Google Calendar API を有効化
+             3. 「APIとサービス」→「認証情報」→「認証情報を作成」→「OAuth クライアント ID」
+             4. アプリケーションの種類: 「デスクトップアプリ」を選択
+             5. 作成後ダウンロードした JSON を次に保存: #{CRED_PATH}
+             6. mkdir -p #{CONFIG_DIR} && mv ~/Downloads/client_secret_*.json #{CRED_PATH}
+         MSG
+    exit 1
+  end
   JSON.parse(File.read(CRED_PATH)).values.first
 end
 
