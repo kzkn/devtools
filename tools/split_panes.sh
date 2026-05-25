@@ -7,11 +7,5 @@ tmux split-window -v -p 30
 tmux select-pane -t 0
 tmux split-window -h -p 40
 
-# 左上: emacs
-tmux select-pane -t 0
-
-# 右上: claude code (直前のセッションをresume)
-tmux select-pane -t 1
-
 # 左上にフォーカスを戻す
 tmux select-pane -t 0
